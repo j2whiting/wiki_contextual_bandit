@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Wikipedia Bandit Explorer</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="/static/styles.css?v=14" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
+    <!-- Version param ensures browsers can't reuse an old cached app.js -->
+    <script src="/static/app.js?v=14" defer></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="app-header">
+        <div class="header-text">
+          <h1>Wikipedia Bandit Explorer</h1>
+          <p>
+            Thompson Sampling over matryoshka embeddings, with keyword-driven
+            search and Wikipedia neighbors. Click stuff you like and watch the
+            model adapt.
+          </p>
+        </div>
+        <div class="header-actions">
+          <div class="model-progress">
+            <div class="progress-label">
+              <span>Model learning</span>
+              <span id="progressCount">0 / 10</span>
+            </div>
+            <div class="progress-bar">
+              <div id="progressFill" class="progress-fill"></div>
+            </div>
+            <div class="progress-hint">Rerank when full for best results</div>
+          </div>
+          <button id="loadBatchButton" class="primary-button">
+            🔄 Rerank with updated model
+          </button>
+        </div>
+      </header>
+
+      <nav class="tabs">
+        <button class="tab-button active" data-tab="feed-tab">Feed</button>
+        <button class="tab-button" data-tab="insights-tab">Model insights</button>
+      </nav>
+
+      <main>
+        <section id="feed-tab" class="tab-content active">
+          <p class="tab-intro">
+            Click articles you find interesting. The model learns your preferences
+            and surfaces better recommendations over time. Watch convergence in
+            <strong>Model insights</strong>. Each card shows the model's
+            <strong>expected reward</strong> — higher means more confident you'll like it.
+          </p>
+          <div class="feed-view-toggle">
+            <button id="viewSwipeBtn" class="toggle-button active" type="button">Swipe</button>
+            <button id="viewGridBtn" class="toggle-button" type="button">Grid</button>
+          </div>
+
+          <!-- Swipe / Tinder-style view -->
+          <div id="swipeView" class="swipe-view">
+            <div id="swipeDeck" class="swipe-deck" aria-label="Swipe deck"></div>
+            <div class="swipe-actions">
+              <button id="passBtn" class="swipe-action pass" type="button">Pass</button>
+              <button id="openBtn" class="swipe-action open" type="button">Open</button>
+              <button id="likeBtn" class="swipe-action like" type="button">Like</button>
+            </div>
+          </div>
+
+          <!-- Existing tile/grid view -->
+          <div id="gridView" class="grid-view hidden">
+            <div id="cardsContainer" class="card-grid"></div>
+            <div id="feedSentinel" class="feed-sentinel" aria-hidden="true"></div>
+          </div>
+
+          <div id="loadingSpinner" class="loading-spinner" aria-hidden="true"></div>
+          <div id="feedStatus" class="status-text"></div>
+        </section>
+
+        <section id="insights-tab" class="tab-content">
+          <div class="stat-grid">
+            <div class="stat-card">
+              <div class="stat-label">Total interactions</div>
+              <div id="stat-interactions" class="stat-value">0</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Hit rate (clicks / total)</div>
+              <div id="stat-hit-rate" class="stat-value">0%</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Rolling avg reward (last 20)</div>
+              <div id="stat-rolling-reward" class="stat-value">0.00</div>
+            </div>
+          </div>
+
+          <div class="chart-block">
+            <h2>Model convergence: hit rate over time</h2>
+            <p class="chart-desc">Rolling 20-sample hit rate. As the model learns your preferences, this should trend upward and stabilize.</p>
+            <canvas id="hitRateChart"></canvas>
+          </div>
+
+          <div class="chart-block">
+            <h2>Raw reward signal</h2>
+            <p class="chart-desc">Individual reward values per interaction. Click = 0.4–1.0 (based on dwell time), Skip = 0.</p>
+            <canvas id="rewardChart"></canvas>
+          </div>
+
+          <div class="chart-block">
+            <h2>Model stability (parameter drift)</h2>
+            <p class="chart-desc">Decreasing drift indicates the model is converging to stable preferences.</p>
+            <canvas id="driftChart"></canvas>
+          </div>
+
+          <div class="taste-map">
+            <div class="taste-map-header">
+              <h2>Taste map (liked articles)</h2>
+              <button id="buildTasteMapBtn" class="secondary-button" type="button">
+                Build taste map
+              </button>
+            </div>
+            <p class="chart-desc">
+              Clusters are computed over embeddings of articles you liked (reward &gt; 0), then projected to 2D with PCA.
+              Hover points to see titles.
+            </p>
+            <canvas id="tasteMapChart"></canvas>
+            <div id="tasteMapStatus" class="status-text"></div>
+          </div>
+
+          <div class="taste-map" style="margin-top: 1rem;">
+            <div class="taste-map-header">
+              <h2>Delta map (Δ vs batch avg)</h2>
+              <button id="buildDeltaMapBtn" class="secondary-button" type="button">
+                Build delta map
+              </button>
+            </div>
+            <p class="chart-desc">
+              Plots recently served cards in a 2D PCA projection of their embeddings. Points are colored by whether
+              the card’s <strong>Δ</strong> (expected reward minus batch average expected reward) is above or below zero.
+            </p>
+            <canvas id="deltaMapChart"></canvas>
+            <div id="deltaMapStatus" class="status-text"></div>
+          </div>
+
+          <div class="taste-map" style="margin-top: 1rem;">
+            <div class="taste-map-header">
+              <h2>Embedding quality (liked vs disliked)</h2>
+              <button id="buildEmbeddingQualityBtn" class="secondary-button" type="button">
+                Compute
+              </button>
+            </div>
+            <p class="chart-desc">
+              Uses the current bandit mean weights (\(\theta\)) to score embeddings and compares the predicted-reward distribution
+              for liked vs disliked content (gap + AUC). Larger separation generally means “better embeddings”.
+            </p>
+            <canvas id="embeddingQualityChart"></canvas>
+            <div id="embeddingQualityStats" class="status-text" style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;"></div>
+            <div id="embeddingQualityStatus" class="status-text"></div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <!-- Article Viewer Modal -->
+    <div id="articleModal" class="modal-overlay" aria-hidden="true">
+      <div class="modal-container">
+        <header class="modal-header">
+          <h2 id="modalTitle">Article Title</h2>
+          <div class="modal-actions">
+            <a id="modalWikiLink" href="#" target="_blank" class="modal-link">Open in Wikipedia ↗</a>
+            <button id="modalClose" class="modal-close" aria-label="Close">&times;</button>
+          </div>
+        </header>
+        <div id="modalContent" class="modal-body">
+          <div class="modal-loading">Loading article...</div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
+

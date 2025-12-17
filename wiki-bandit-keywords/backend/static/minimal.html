@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <body>
+    <button id="btn">Fetch /r</button>
+    <pre id="out"></pre>
+    <script>
+      const out = document.getElementById("out");
+      document.getElementById("btn").onclick = async () => {
+        out.textContent = "Loading...";
+        try {
+          const res = await fetch("/r?batch_size=1&_=" + Date.now(), { cache: "no-store" });
+          const raw = await res.text();
+          console.log("[/r] status", res.status, "raw:", raw);
+          out.textContent = raw;
+        } catch (e) {
+          out.textContent = String(e);
+        }
+      };
+    </script>
+  </body>
+</html>

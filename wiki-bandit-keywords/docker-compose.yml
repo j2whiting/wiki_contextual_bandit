@@ -1,0 +1,62 @@
+# Wikipedia Bandit Explorer - Docker Compose
+#
+# Usage:
+#   Start (persists data between runs):
+#     docker-compose up --build
+#
+#   Fresh start (wipe all data first):
+#     ./fresh-start.sh
+#
+#   Stop containers:
+#     docker-compose down
+#
+#   Stop AND wipe all data:
+#     docker-compose down -v
+
+# Shared env for api + worker so EMBEDDING_DIM is defined in one place.
+# You can override via a local `.env` file or `EMBEDDING_DIM=128 docker compose up`.
+x-bandit-env: &bandit_env
+  # Set this ONCE and both api + worker will use it.
+  EMBEDDING_DIM: ${EMBEDDING_DIM:-128}
+  # Extra exploration knob layered on top of Thompson Sampling (0..1).
+  EXPLORATION_FRACTION: ${EXPLORATION_FRACTION:-0.0}
+  BANDIT_STATE_PATH: /app/backend/data/bandit_state.json
+  BANDIT_QUEUE_DB_PATH: /app/backend/data/queue.sqlite3
+  BANDIT_ANALYTICS_DB_PATH: /app/backend/data/analytics.sqlite3
+  BANDIT_SNAPSHOT_DIR: /app/backend/data/snapshots
+
+services:
+
+  api:
+    build: .
+    ports:
+      - "127.0.0.1:8888:8888"
+    volumes:
+      - bandit-data:/app/backend/data
+    environment: *bandit_env
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8888/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  worker:
+    build: .
+    command: ["python", "-m", "backend.worker", "--target-size", "300", "--batch-size", "50", "--discovery-only"]
+    volumes:
+      - bandit-data:/app/backend/data
+      # Reuse host HF cache so the model doesn't download every run.
+      - ~/.cache/huggingface:/root/.cache/huggingface
+    environment:
+      <<: *bandit_env
+      # Unbuffered stdout so logs stream immediately.
+      PYTHONUNBUFFERED: "1"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  bandit-data:
+    name: wiki-bandit-data
