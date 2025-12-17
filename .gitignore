@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+.env
+
+# Data & SQLite
+backend/data/
+*.sqlite3
+*.db
+*.log
+*.bak
+*.swp
+
+# Docker
+bandit-data/
+*.pid
+
+# Jupyter, VSCode, and IDE/editor junk
+*.ipynb
+.ipynb_checkpoints/
+.vscode/
+*.code-workspace
+*.sublime-workspace
+*.sublime-project
+.idea/
+*.iml
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Node/npm (if JS build is ever used)
+node_modules/
+
+# OS junk
+*~
+
+# Ignore logs
+*.log
+
+# Ignore old directory for double safety
+wiki-bandit-keywords/
+
